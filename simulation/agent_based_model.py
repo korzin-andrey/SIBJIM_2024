@@ -480,7 +480,7 @@ def main_function(number_seed, data_folder, dataset, dict_school_id_all, lmbd, i
         # pd.DataFrame(new_results_dic['H1N1']).to_csv(
         #     r'results/new_infected_{}_seed_{}.txt'.format(number_seed, key), sep='\t', index=False)
 
-        df_incidence = pd.DataFrame(new_results_dic['H1N1'])
+        df_incidence = pd.DataFrame(new_results_dic)
         df_incidence.to_csv(
             '../results/' + data_folder + r'/incidence_seed_{}.csv'.format(number_seed), sep='\t', index=False)
 
@@ -544,13 +544,13 @@ if __name__ == '__main__':
 
     infected_init_dic = {'H1N1': 10, 'H3N2': 0, 'B': 0}
     alpha_dic = {'H1N1': 0.78, 'H3N2': 0.74, 'B': 0.6}
-    lmbd = 0.15
+    lmbd = 0.003
     num_runs = 10
     days = range(1, 150)
     strains_keys = ['H1N1', 'H3N2', 'B']
 
     # in data folder schould be 3 files: 'people.txt', 'households.txt', 'schools.json'
-    data_folder = 'initial_samara/'
+    data_folder = 'samara_25.0_sampled/'
     data_path = '../data/' + data_folder
 
     results_dir = '../results/' + data_folder
@@ -574,12 +574,11 @@ if __name__ == '__main__':
 
     print("{} processors detected".format(cpu_num))
     output = {}
-    with mp.Pool(2) as pool:
+    with mp.Pool(num_runs) as pool:
         output = pool.map(partial(main_function, data_folder=data_folder, dataset=data,
                           dict_school_id_all=dict_school_id, lmbd=lmbd, infected_init_dic=infected_init_dic,
-                          days=days, dict_school_len=dict_school_len), range(2))
+                          days=days, dict_school_len=dict_school_len), range(num_runs))
 
     finish_all = (time.perf_counter() - start_all)
-    for i in output:
-        print(i[1:])
+
     print("Total calculation time: {}".format(finish_all))
