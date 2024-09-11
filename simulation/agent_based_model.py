@@ -19,14 +19,14 @@ warnings.filterwarnings('ignore')
 pd.options.display.width = None
 pd.options.display.max_columns = None
 
+from tqdm import tqdm   
 
 def load_data(data_path):
     data = pd.read_csv(data_path + 'people.txt', sep='\t', index_col=0)
     data = data[['sp_id', 'sp_hh_id', 'age', 'sex', 'work_id']]
     households = pd.read_csv(data_path + 'households.txt', sep='\t')
     households = households[['sp_id', 'latitude', 'longitude']]
-    dict_school_id = json.load(
-        open(os.path.expanduser(data_path + 'schools.json')))
+    dict_school_id = {str(i[0]): list(i[1].index) for i in data[(data.age<18)&(data.work_id!='X')].groupby('work_id')}
     dict_school_len = [len(dict_school_id[i]) for i in dict_school_id.keys()]
     return data, households, dict_school_id
 
@@ -158,6 +158,7 @@ def main_function(number_seed, data_folder, dataset, dict_school_id_all, lmbd, i
 
     id_susceptible_list_dic, latitude_list_dic, longitude_list_dic, type_list_dic, id_place_list_dic, days_inf_dic, results_dic, new_results_dic = {}, {}, {}, {}, {}, {}, {}, {}
 
+
     for key in strains_keys:
         id_susceptible_list_dic[key], latitude_list_dic[key], longitude_list_dic[key], type_list_dic[key], id_place_list_dic[
             key], days_inf_dic[key], results_dic[key], new_results_dic[key] = [], [], [], [], [], [], [], []
@@ -174,15 +175,20 @@ def main_function(number_seed, data_folder, dataset, dict_school_id_all, lmbd, i
     dict_work_id = copy.deepcopy(dict_school_id_all)
     dict_work_id.clear()
 
+
     for key in strains_keys:
         dict_work_id[key] = {int(i): list(data_current[(data_current.age > 17) & (data_current.work_id == i) & (data_current["susceptible_"+key] == 1)].index)
                              for i in data_current.loc[(data_current.infected == infIndexForStrain(key)) & (data_current.age > 17) & (data_current.work_id != 'X'), 'work_id']}
 
-    [dict_school_id_all[str(i)].remove(j) for i, j in zip(data_current.loc[(data_current.infected > 0) & (data_current.age <= 17) &
+    for i, j in zip(data_current.loc[(data_current.infected > 0) & (data_current.age <= 17) &
                                                                            (data_current.work_id != 'X'), 'work_id'],
                                                           data_current[(data_current.infected > 0) & (data_current.age <= 17) &
-                                                                       (data_current.work_id != 'X')].index)]
-
+                                                                       (data_current.work_id != 'X')].index):
+        try:            
+            dict_school_id_all[str(i)].remove(j) 
+        except:
+            print(i, j)
+            exit(0)
     # Сначала были все дети в школах, сейчас убрали больных и остались потенциально заразные и иммунные. Нужно убрать иммунных к данному штамму для каждого подсловаря.
 
     dict_school_id = {}  # Здесь будут списки восприимчивых в местах по штаммам
@@ -200,7 +206,8 @@ def main_function(number_seed, data_folder, dataset, dict_school_id_all, lmbd, i
 
     # Debug version of the upper procedure
     # Убираем из школы i детишек j тех, что иммунны к key (оставляем восприимчивых)
-    for key in strains_keys:
+
+    for key in tqdm(strains_keys):
         dict_school_id[key] = copy.deepcopy(dict_school_id_all)
 
         # print("Immune from {}".format(key))
@@ -212,7 +219,7 @@ def main_function(number_seed, data_folder, dataset, dict_school_id_all, lmbd, i
                                  (data_current.work_id != 'X'), 'work_id'], data_current[(data_current["susceptible_" + key] == 0) & (data_current.infected == 0) &
                                                                                          (data_current.age <= 17) & (data_current.work_id != 'X')].index):
             if not (j in dict_school_id[key][str(i)]):
-                print()
+                print(1)
                 # print("My precious school {}".format(i))
                 # print("My child {}".format(j))
             else:
@@ -274,7 +281,7 @@ def main_function(number_seed, data_folder, dataset, dict_school_id_all, lmbd, i
                 # Нет данных о жителях в словаре по id домохозяйства для данного штамма (бо добавились инфекции)
                 if i not in dict_hh_id[cur_strain].keys():
                     dict_hh_id[cur_strain].update(
-                        {i: list(data_current[(data_current.sp_hh_id == i)].index)})
+                        {i: list(data_current[(data_current.sp_hh_id == i)&(data_current['susceptible_'+cur_strain]==1)].index)})
                 # Все восприимчивые к конкретному штамму люди в данном домохозяйстве
                 hh_len = len(dict_hh_id[cur_strain][i])
                 if hh_len != 0:
@@ -326,7 +333,7 @@ def main_function(number_seed, data_folder, dataset, dict_school_id_all, lmbd, i
 
                 if i not in dict_work_id[cur_strain].keys():  # Зачем?
                     dict_work_id[cur_strain].update(
-                        {i: list(some_current[some_current.work_id == int(i)].index)})
+                        {i: list(some_current[(some_current.work_id == int(i))&(some_current['susceptible_'+cur_strain]==1)].index)})
 
                 # Кол-во восприимчивых в месте
                 work_len = len(dict_work_id[cur_strain][i])
@@ -544,15 +551,17 @@ if __name__ == '__main__':
 
     infected_init_dic = {'H1N1': 10, 'H3N2': 0, 'B': 0}
     alpha_dic = {'H1N1': 0.78, 'H3N2': 0.74, 'B': 0.6}
-    lmbd = 0.003
+    lmbd = 0.3
     num_runs = 10
-    days = range(1, 150)
+    days = range(1, 120)
     strains_keys = ['H1N1', 'H3N2', 'B']
 
     # in data folder schould be 3 files: 'people.txt', 'households.txt', 'schools.json'
     data_folder = 'samara_25.0_sampled/'
     data_path = '../data/' + data_folder
-
+    # 1871
+    # 7386
+    # 17380
     results_dir = '../results/' + data_folder
 
     if not os.path.exists(results_dir):
@@ -568,7 +577,8 @@ if __name__ == '__main__':
                        for i in dict_school_id.keys()]
     data = set_initial_values(data, strains_keys, alpha_dic)
 
-    print(data.head())
+    print(data[data.susceptible_H1N1==1])
+    #exit(0)
 
     cpu_num = mp.cpu_count()
 
